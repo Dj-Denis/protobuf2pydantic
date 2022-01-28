@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 from importlib import import_module
@@ -19,5 +20,6 @@ def pydantic(
         )
 ):
     sys.path.append(str(pb2.parent))
-    module = import_module(pb2.stem)
+    sys.path.append(os.getcwd())
+    module = import_module(pb2.stem, package=str(pb2.parent))
     echo(biz.pb2_to_pydantic(module))
