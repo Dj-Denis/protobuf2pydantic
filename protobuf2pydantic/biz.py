@@ -35,6 +35,7 @@ def convert_field(level: int, field: FieldDescriptor) -> str:
     field_type = field.type
     field_label = field.label
     extra = None
+    is_part_of_oneof = field.containing_oneof is not None
 
     if field_type == FieldDescriptor.TYPE_ENUM:
         enum_type: EnumDescriptor = field.enum_type
@@ -69,7 +70,8 @@ def convert_field(level: int, field: FieldDescriptor) -> str:
     default_statement = f" = Field(default_factory={factory})"
     if field_label == FieldDescriptor.LABEL_REQUIRED:
         default_statement = ""
-
+    if is_part_of_oneof:
+        type_statement = f"Optional[{type_statement}]"
     field_statement = f"{tab * level}{field.name}: {type_statement}{default_statement}"
     if not extra:
         return field_statement
@@ -101,7 +103,7 @@ def pb2_to_pydantic(module) -> str:
         model_string = msg2pydantic(0, obj.DESCRIPTOR)
         pydantic_models.append(model_string)
 
-    header = """from typing import List, Dict, Any
+    header = """from typing import List, Dict, Any, Optional
 from enum import IntEnum
 
 from pydantic import BaseModel, Field
