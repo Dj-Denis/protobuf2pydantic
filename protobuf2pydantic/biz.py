@@ -1,9 +1,14 @@
 from os import linesep
-from typing import List
+from typing import List, Set
 from functools import partial
 
+import logging
 from google.protobuf.reflection import GeneratedProtocolMessageType
 from google.protobuf.descriptor import Descriptor, FieldDescriptor, EnumDescriptor
+
+logging.basicConfig()
+
+logger = logging.getLogger(__name__)
 
 tab = " " * 4
 one_line, two_lines = linesep * 2, linesep * 3
@@ -30,7 +35,8 @@ def m(field: FieldDescriptor) -> str:
     return type_mapping[field.type].__name__
 
 
-def convert_field(level: int, field: FieldDescriptor) -> str:
+def convert_field(level: int, field: FieldDescriptor, class_names: Set[str],
+                  class_name_prefix: str) -> str:
     level += 1
     field_type = field.type
     field_label = field.label
@@ -57,7 +63,9 @@ def convert_field(level: int, field: FieldDescriptor) -> str:
             type_statement = "Dict[str, Any]"
             factory = "dict"
         else:
-            extra = msg2pydantic(level, field.message_type)
+            if field.message_type.name not in class_names:
+                extra = msg2pydantic(level, field.message_type, class_names,
+                                     class_name_prefix)
             factory = type_statement
     else:
         type_statement = m(field)
@@ -78,13 +86,23 @@ def convert_field(level: int, field: FieldDescriptor) -> str:
     return linesep + extra + one_line + field_statement
 
 
-def msg2pydantic(level: int, msg: Descriptor) -> str:
+def msg2pydantic(level: int, msg: Descriptor, class_names: Set[str],
+                 class_name_prefix: str = "",
+                 skip_name_check: bool = False) -> str:
+    prefixed_class_name = f"{class_name_prefix}{msg.name}"
+    if prefixed_class_name in class_names and not skip_name_check:
+        return ""
+    class_names.add(prefixed_class_name)
+
     class_statement = f"{tab * level}class {msg.name}(BaseModel):"
-    field_statements = map(partial(convert_field, level), msg.fields)
-    lines = [class_statement, *field_statements]
-    if len(msg.fields) == 0:
-        lines.append(f'{tab * (level + 1)}pass')
-    return linesep.join(lines)
+    field_statements = [
+        convert_field(level, field, class_names, f"{prefixed_class_name}-")
+        for field in msg.fields
+    ]
+
+    if len(field_statements) == 0:
+        field_statements.append(f'{tab * (level + 1)}pass')
+    return linesep.join([class_statement, *field_statements])
 
 
 def get_config(level: int):
@@ -96,12 +114,18 @@ def get_config(level: int):
 
 def pb2_to_pydantic(module) -> str:
     pydantic_models: List[str] = []
-    for i in dir(module):
-        obj = getattr(module, i)
-        if not isinstance(obj, GeneratedProtocolMessageType):
-            continue
-        model_string = msg2pydantic(0, obj.DESCRIPTOR)
-        pydantic_models.append(model_string)
+    class_names: Set[str] = set()
+
+    descriptors = [
+        getattr(module, m).DESCRIPTOR for m in vars(module).keys()
+        if isinstance(getattr(module, m), GeneratedProtocolMessageType)
+    ]
+
+    pydantic_models = [
+        msg2pydantic(0, descriptor, class_names, skip_name_check=True)
+        for descriptor in descriptors
+    ]
+    pydantic_models = [m for m in pydantic_models if m != ""]
 
     header = """from typing import List, Dict, Any, Optional
 from enum import IntEnum
