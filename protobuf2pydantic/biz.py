@@ -1,6 +1,6 @@
 from os import linesep
 from typing import List, Set
-from functools import partial
+
 
 import logging
 from google.protobuf.reflection import GeneratedProtocolMessageType
@@ -80,7 +80,9 @@ def convert_field(level: int, field: FieldDescriptor, class_names: Set[str],
         default_statement = ""
     if is_part_of_oneof:
         type_statement = f"Optional[{type_statement}]"
-    field_statement = f"{tab * level}{field.name}: {type_statement}{default_statement}"
+    field_statement = f"{tab * level}{field.name}: {type_statement}"
+    if not is_part_of_oneof:
+        field_statement += default_statement
     if not extra:
         return field_statement
     return linesep + extra + one_line + field_statement
