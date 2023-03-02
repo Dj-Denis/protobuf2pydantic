@@ -6,9 +6,13 @@ import logging
 from google.protobuf.reflection import GeneratedProtocolMessageType
 from google.protobuf.descriptor import Descriptor, FieldDescriptor, EnumDescriptor
 
-logging.basicConfig()
+message_metaclasses = [GeneratedProtocolMessageType]
+try:
+    from google._upb._message import MessageMeta
 
-logger = logging.getLogger(__name__)
+    message_metaclasses.append(MessageMeta)
+except ImportError:
+    pass
 
 tab = " " * 4
 one_line, two_lines = linesep * 2, linesep * 3
@@ -56,7 +60,7 @@ def convert_field(level: int, field: FieldDescriptor, class_names: Set[str],
     elif field_type == FieldDescriptor.TYPE_MESSAGE:
         type_statement: str = field.message_type.name
         if type_statement.endswith("Entry"):
-            key, value = field.message_type.fields  # type: FieldDescriptor
+            key, value = field.message_type.fields
             type_statement = f"Dict[{m(key)}, {m(value)}]"
             factory = "dict"
         elif type_statement == "Struct":
@@ -118,10 +122,16 @@ def pb2_to_pydantic(module) -> str:
     pydantic_models: List[str] = []
     class_names: Set[str] = set()
 
-    descriptors = [
-        getattr(module, m).DESCRIPTOR for m in vars(module).keys()
-        if isinstance(getattr(module, m), GeneratedProtocolMessageType)
-    ]
+    descriptors = []
+    for m in vars(module).keys():
+        if not any(isinstance(getattr(module, m), metacls) for metacls in message_metaclasses):
+            continue
+        descriptors.append(getattr(module, m).DESCRIPTOR)
+
+    # descriptors = [
+    #     getattr(module, m).DESCRIPTOR for m in vars(module).keys()
+    #     if isinstance(getattr(module, m), GeneratedProtocolMessageType)
+    # ]
 
     pydantic_models = [
         msg2pydantic(0, descriptor, class_names, skip_name_check=True)
